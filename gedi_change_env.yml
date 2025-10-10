@@ -1,4 +1,4 @@
-name: gedi_pa_env
+name: gedi_change_env
 channels:
   - conda-forge
   - defaults
