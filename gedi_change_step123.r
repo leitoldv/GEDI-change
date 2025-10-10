@@ -205,8 +205,8 @@ cat(sprintf("\n✅ Finished: %d grid cells meet min_count = %d in both periods.\
 # --- Save output to file -------------------------------------------------
 GRID.for.matching <- vect(GRID.coords, geom=c("x","y"), crs = "epsg:4326")
 
-#filename_out <- paste0("output/", iso3, "_grid.RDS")
-filename_out <- paste0(f.path, "INPUT_grids/", iso3, "_grid.RDS")
+filename_out <- paste0("output/", iso3, "_grid.RDS")
+#filename_out <- paste0(f.path, "INPUT_grids/", iso3, "_grid.RDS")
 print(filename_out)
 
 saveRDS(GRID.for.matching, file = filename_out)
@@ -292,8 +292,8 @@ d_control <- data.frame(d_control) %>%
   
   d_control$UID <-  seq.int(nrow(d_control))
    
-#filename_out <- paste("output/", iso3, "_prepped_control.RDS")
-filename_out <- paste0(f.path, "/MATCHING_points/", iso3, "_prepped_control.RDS")
+filename_out <- paste("output/", iso3, "_prepped_control.RDS")
+#filename_out <- paste0(f.path, "/MATCHING_points/", iso3, "_prepped_control.RDS")
 print(filename_out)
 
 saveRDS(d_control, file = filename_out)  
@@ -377,15 +377,16 @@ for(i in 1:length(allPAs)){
       
       d_pa$UID <- seq.int(nrow(d_pa))
 
-      #filename_out <- paste0("output/", iso3, "_prepped_pa_", testPA$WDPAID, ".RDS")
-      filename_out <- paste0(f.path, "/MATCHING_points/", iso3, "/", iso3, "_prepped_pa_", testPA$WDPAID, ".RDS")
+      filename_out <- paste0("output/", iso3, "_prepped_pa_", testPA$WDPAID, ".RDS")
+      #filename_out <- paste0(f.path, "/MATCHING_points/", iso3, "/", iso3, "_prepped_pa_", testPA$WDPAID, ".RDS")
       print(filename_out)
         
       saveRDS(d_pa, file = filename_out)  
     }
   }
 
-png(paste0(f.path, iso3, "_matching_points_map.png"), width = 1000, height = 1000, res = 300)
+png(paste0("output/", iso3, "_matching_points_map.png"), width = 1000, height = 1000, res = 300)
+#png(paste0(f.path, iso3, "_matching_points_map.png"), width = 1000, height = 1000, res = 300)
 plot(allPAs)
 plot(GRID.pts.nonPA, pch=".", col="blue", add=T)
 plot(adm, border="red", add=T)
