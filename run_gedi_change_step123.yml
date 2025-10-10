@@ -1,0 +1,17 @@
+algorithm_description: prepare 1km sample grid for matching
+algorithm_name: run_gedi_change_step123
+algorithm_version: v1
+build_command: GEDI_change/build_gedi_change.sh
+disk_space: 80GB
+docker_container_url: mas.maap-project.org/root/maap-workspaces/base_images/r:v4.3.0
+inputs:
+  config: []
+  positional:
+  - default: ''
+    description: iso country code
+    name: c
+    required: true
+    
+queue: maap-dps-worker-32gb
+repository_url: https://github.com/leitoldv/GEDI_change.git
+run_command: GEDI_change/runisobash_vl_step123_change.sh
