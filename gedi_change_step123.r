@@ -215,7 +215,7 @@ saveRDS(GRID.for.matching, file = filename_out)
 #-------------------------------------------------------------------------------------
 # STEP2. Clip sampling grid to nonPA areas within country & sample raster layers on nonPA grid
 #-------------------------------------------------------------------------------------
-GRID.for.matching <- readRDS(s3_get(paste0(s3.path, "INPUT_grids/", iso3, "_grid.RDS"), force=TRUE))
+#GRID.for.matching <- readRDS(s3_get(paste0(s3.path, "INPUT_grids/", iso3, "_grid.RDS"), force=TRUE))
 
 GRID.pts.nonPA <- project(GRID.for.matching, "epsg:4326")
 
@@ -306,7 +306,7 @@ saveRDS(d_control, file = filename_out)
 # - sample raster layers on each PA grid
 # - save each PA sample into prepped_pa_##.RDS file
 #-------------------------------------------------------------------------------------
-GRID.for.matching <- readRDS(s3_get(paste0(s3.path, "INPUT_grids/", iso3, "_grid.RDS"), force=TRUE))
+#GRID.for.matching <- readRDS(s3_get(paste0(s3.path, "INPUT_grids/", iso3, "_grid.RDS"), force=TRUE))
 
 for(i in 1:length(allPAs)){
     
