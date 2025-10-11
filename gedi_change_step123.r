@@ -29,7 +29,7 @@ path2gedi <- "s3://maap-ops-workspace/shared/ameliah/gedi-test/brazil_tiles/data
 s3_get_files(c(paste0(s3.path, "INPUT_countries/shp/", iso3, ".shp"),
                paste0(s3.path, "INPUT_countries/shp/", iso3, ".shx"),
                paste0(s3.path, "INPUT_countries/shp/", iso3, ".prj"),
-               paste0(s3.path, "INPUT_countries/shp/", iso3, "..dbf")), confirm = FALSE)
+               paste0(s3.path, "INPUT_countries/shp/", iso3, ".dbf")), confirm = FALSE)
 #adm <- st_read(s3_get(paste(f.path,"WDPA_countries/shp/",iso3,".shp",sep=""), force=TRUE))
 #adm_prj <- project(vect(adm), "epsg:6933")
 adm <- vect(s3_get(paste0(s3.path, "INPUT_countries/shp/", iso3, ".shp")))
