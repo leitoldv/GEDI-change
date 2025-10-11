@@ -26,11 +26,11 @@ f.path <- "/projects/my-public-bucket/GEDI_global_change/"
 s3.path <- "s3://maap-ops-workspace/shared/leitoldv/GEDI_global_change/"
 path2gedi <- "s3://maap-ops-workspace/shared/ameliah/gedi-test/brazil_tiles/data/"
 
-adm <- vect(paste0(f.path, "INPUT_countries/shp/", iso3, ".shp"))
+adm <- vect(s3_get(paste0(s3.path, "INPUT_countries/shp/", iso3, ".shp")))
 crs(adm) <- "EPSG:4326"
 adm_prj <- project(adm, "EPSG:6933")
 
-grid_rast <- rast(paste0(f.path, "GEDI04_B_MW019MW223_02_002_02_R01000M_MU.tif"))
+grid_rast <- rast(s3_get(paste0(s3.path, "GEDI04_B_MW019MW223_02_002_02_R01000M_MU.tif")))
 grid_crop <- crop(grid_rast, adm_prj)
 grid_mask <- mask(grid_crop, adm_prj)
 #grid_mask
