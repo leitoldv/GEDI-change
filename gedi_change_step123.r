@@ -112,10 +112,114 @@ tiles_sf <- st_sf(
   geometry = st_sfc(polygons, crs = 4326)
 )
 
-adm_sf <- st_as_sf(adm)
+#adm_sf <- st_as_sf(adm)
+sf_use_s2(FALSE) # Temporarily switch off S2 for planar ops
+adm_sf <- st_make_valid(st_as_sf(adm))
+adm_sf <- st_transform(adm_sf, 6933)  # project to meters
+adm_sf <- st_buffer(adm_sf, 0)
+adm_sf <- st_transform(adm_sf, 4326)
+sf_use_s2(TRUE) # Restore normal behavior
+
 selected_tiles <- st_intersection(tiles_sf, adm_sf)
 selected_tile_ids <- selected_tiles$tile_id
 
 cat(sprintf("Found %d overlapping tiles with adm boundary\n", length(selected_tile_ids)))
 
+# --- PARAMETERS -----------------------------------------------------------
+path2gedi <- "s3://maap-ops-workspace/shared/ameliah/gedi-test/brazil_tiles/data/"
+cols_to_read <- c("lat_lowestmode", "lon_lowestmode")
+
+yearsT1 <- c(2019, 2020)
+yearsT2 <- c(2022, 2023)
+
+min_count <- 1  # Minimum GEDI points per grid cell in both periods
+GRID.coords <- data.frame()
+
+# --- LOOP -----------------------------------------------------------------
+for (i in seq_along(selected_tile_ids)) {
+  tile_id <- selected_tile_ids[i]
+  cat(sprintf("Processing tile %d of %d : %s\n", i, length(selected_tile_ids), tile_id))
+
+  # --- Helper to safely read parquet files from S3 ---
+  safe_read <- function(p, cols) {
+  tryCatch(
+    read_parquet(p, col_select = all_of(cols)),
+    error = function(e) {
+      cat(sprintf("  → Could not read %s: %s\n", p, e$message))
+      return(NULL)
+      }
+    )
+  }
+
+  # --- Read GEDI points for T1 ---
+  paths_T1 <- paste0(path2gedi, "tile_id=", tile_id, "/year=", yearsT1, "/data_0.parquet")
+  tile_T1 <- purrr::map_dfr(paths_T1, safe_read, cols = cols_to_read)
+
+  if (nrow(tile_T1) == 0) {
+    cat(sprintf("  → Tile %s: no points for T1, skipping.\n", tile_id))
+    next
+  }
+    
+  gedi_T1 <- vect(tile_T1, geom = c("lon_lowestmode", "lat_lowestmode"),
+                  crs = "EPSG:4326", keepgeom = FALSE)
+  gedi_T1_prj <- project(gedi_T1, "EPSG:6933")
+  gcount_T1 <- rasterize(geom(gedi_T1_prj)[, c("x", "y")],
+                         GRID.lons.adm.m, fun = "count", background = NA)
+
+  # --- Read GEDI points for T2 ---
+  paths_T2 <- paste0(path2gedi, "tile_id=", tile_id, "/year=", yearsT2, "/data_0.parquet")
+  tile_T2 <- purrr::map_dfr(paths_T2, safe_read, cols = cols_to_read)
+
+  if (nrow(tile_T2) == 0) {
+    cat(sprintf("  → Tile %s: no points for T2, skipping.\n", tile_id))
+    next
+  }
+  
+  gedi_T2 <- vect(tile_T2, geom = c("lon_lowestmode", "lat_lowestmode"),
+                  crs = "EPSG:4326", keepgeom = FALSE)
+  gedi_T2_prj <- project(gedi_T2, "EPSG:6933")
+  gcount_T2 <- rasterize(geom(gedi_T2_prj)[, c("x", "y")],
+                         GRID.lons.adm.m, fun = "count", background = NA)
+
+  # --- Identify cells with >= min_count points in both T1 & T2 ---
+  r_both <- mask(gcount_T1 >= min_count & gcount_T2 >= min_count, GRID.lons.adm.m)
+
+  # --- Check if there are any valid cells before converting to points ---
+  valid_cells <- global(!is.na(r_both), "sum", na.rm = TRUE)[1, 1]
+  cat(sprintf(" %s valid overlap cells found.\n", valid_cells))
+  if (is.na(valid_cells) || valid_cells == 0) {
+    cat(sprintf("  → Tile %s: no valid overlap cells.\n", tile_id))
+    next
+  }
+
+  # --- Conversion to points --- each raster cell becomes a point at its centroid (x, y).
+  pts <- try(as.points(r_both, values = FALSE), silent = TRUE)
+  if (inherits(pts, "try-error") || nrow(pts) == 0) {
+    cat(sprintf("  → Tile %s: empty raster, skipping.\n", tile_id))
+    next
+  }
+
+  pts_ll <- project(pts, "EPSG:4326")
+  coords <- try(terra::crds(pts_ll), silent = TRUE)
+  xy_overlap <- as.data.frame(coords[, 1:2, drop = FALSE])
+  colnames(xy_overlap) <- c("x", "y")
+    
+  GRID.coords <- rbind(GRID.coords, xy_overlap)
+
+  cat(sprintf("  → Tile %s: added %d cells.\n", tile_id, nrow(xy_overlap)))
+}
+
+# --- Deduplicate grid cells across tiles ---------------------------------
+GRID.coords <- unique(GRID.coords)
+cat(sprintf("\n✅ Finished: %d grid cells meet min_count = %d in both periods.\n", nrow(GRID.coords), min_count))
+
+
+# --- Save output to file -------------------------------------------------
+GRID.for.matching <- vect(GRID.coords, geom=c("x","y"), crs = "epsg:4326")
+
+filename_out <- paste0("output/", iso3, "_grid.RDS")
+#filename_out <- paste0(f.path, "INPUT_grids/", iso3, "_grid.RDS")
+print(filename_out)
+
+saveRDS(GRID.for.matching, file = filename_out)
 
