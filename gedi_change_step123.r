@@ -141,16 +141,29 @@ for (i in seq_along(selected_tile_ids)) {
   cat(sprintf("Processing tile %d of %d : %s\n", i, length(selected_tile_ids), tile_id))
 
   # --- Helper to safely read parquet files from S3 ---
-  safe_read <- function(p, cols) {
-  tryCatch(
-    read_parquet(p, col_select = all_of(cols)),
-    error = function(e) {
-      cat(sprintf("  → Could not read %s: %s\n", p, e$message))
-      return(NULL)
-      }
-    )
-  }
-
+    safe_read <- function(p, cols) {
+      tryCatch({
+        if (!file.exists(p)) {
+          cat(sprintf("  → File not found: %s\n", p))
+          return(NULL)
+        }
+        df <- try(read_parquet(p, col_select = all_of(cols)), silent = TRUE)
+        if (inherits(df, "try-error") || is.null(df)) {
+          cat(sprintf("  → Could not read %s properly, returning NULL.\n", p))
+          return(NULL)
+        }
+        if (nrow(df) == 0) {
+          cat(sprintf("  → File %s is empty.\n", p))
+          return(NULL)
+        }
+        return(df)
+      },
+      error = function(e) {
+        cat(sprintf("  → Parquet error %s: %s\n", p, e$message))
+        return(NULL)
+      })
+    }
+    
   # --- Read GEDI points for T1 ---
   paths_T1 <- paste0(path2gedi, "tile_id=", tile_id, "/year=", yearsT1, "/data_0.parquet")
   tile_T1 <- purrr::map_dfr(paths_T1, safe_read, cols = cols_to_read)
@@ -159,7 +172,17 @@ for (i in seq_along(selected_tile_ids)) {
     cat(sprintf("  → Tile %s: no points for T1, skipping.\n", tile_id))
     next
   }
-    
+
+#----------------------------------------
+cat("---- DEBUG INFO ----\n")
+cat("Tile:", tile_id, "\n")
+cat("Files T1:", paste(paths_T1, collapse=", "), "\n")
+cat("Files T2:", paste(paths_T2, collapse=", "), "\n")
+cat("Names T1:", paste(names(tile_T1), collapse=", "), "\n")
+cat("Nrow T1:", nrow(tile_T1), "\n")
+cat("--------------------\n")
+#----------------------------------------
+
   gedi_T1 <- vect(tile_T1, geom = c("lon_lowestmode", "lat_lowestmode"),
                   crs = "EPSG:4326", keepgeom = FALSE)
   gedi_T1_prj <- project(gedi_T1, "EPSG:6933")
