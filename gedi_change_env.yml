@@ -37,3 +37,4 @@ dependencies:
   - r-testthat
   - r-stringr
   - r-readr
+  - r-duckdb
