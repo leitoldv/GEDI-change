@@ -120,17 +120,9 @@ adm_sf <- st_as_sf(adm)
 adm_sf <- st_make_valid(adm_sf)
 adm_sf <- st_union(adm_sf)
 adm_sf <- st_collection_extract(adm_sf, "POLYGON")
-#adm_sf <- st_transform(adm_sf, 6933)  # project to meters
-#adm_sf <- st_buffer(adm_sf, 0)
-#adm_sf <- st_transform(adm_sf, 4326
-if (!all(st_is_valid(adm_sf))) {
-  warning("Some geometries still invalid, applying st_make_valid again")
-  adm_sf <- st_make_valid(adm_sf)
-}
-sf_use_s2(TRUE) # Restore normal behavior
-
 selected_tiles <- st_intersection(tiles_sf, adm_sf)
 selected_tile_ids <- selected_tiles$tile_id
+sf_use_s2(TRUE) # Restore normal behavior
 
 cat(sprintf("Found %d overlapping tiles with adm boundary\n", length(selected_tile_ids)))
 
