@@ -1,4 +1,3 @@
-#install.packages("arrow")
 #install.packages("s3")
 #-------------------------------------------------------------------------------------
 library(terra)
@@ -10,7 +9,6 @@ library(purrr)
 library(sp)
 library(DBI)
 library(duckdb)
-#library(arrow)
 #-------------------------------------------------------------------------------------
 
 #iso3 <- "BRA"
@@ -49,6 +47,7 @@ GRID.lats.adm   <- crop(GRID.lats, adm_prj)
 GRID.lats.adm.m <- mask(GRID.lats.adm, adm_prj)
 GRID.lons.adm   <- crop(GRID.lons, adm_prj)
 GRID.lons.adm.m <- mask(GRID.lons.adm, adm_prj)
+template_rast <- GRID.lons.adm.m
 
 allPAs <- readRDS(s3_get(paste0(s3.path, "INPUT_shapefiles/", iso3, "_PA_poly.rds"), force=TRUE))
 
@@ -134,7 +133,9 @@ yearsT1 <- c(2019, 2020)
 yearsT2 <- c(2022, 2023)
 
 min_count <- 1  # Minimum GEDI points per grid cell in both periods
-GRID.coords <- data.frame()
+
+coords_list <- vector("list", length(selected_tile_ids))
+list_idx <- 1
 
 # --- duckdb -----------------------------------------------------------------
 con <- dbConnect(duckdb(), dbdir = ":memory:")
@@ -158,62 +159,63 @@ safe_read_duck <- function(p, cols) {
 }
 
 # --- LOOP -----------------------------------------------------------------
-    for (i in seq_along(selected_tile_ids)) {
-      tile_id <- selected_tile_ids[i]
-      cat(sprintf("Processing tile %d of %d : %s\n", i, length(selected_tile_ids), tile_id))
+for (i in seq_along(selected_tile_ids)) {
+  tile_id <- selected_tile_ids[i]
+  cat(sprintf("Processing tile %d of %d : %s\n", i, length(selected_tile_ids), tile_id))
     
-      paths_T1 <- paste0(path2gedi, "tile_id=", tile_id, "/year=", yearsT1, "/data_0.parquet")
-      tile_T1 <- purrr::map_dfr(paths_T1, safe_read_duck, cols = cols_to_read)
-      if (is.null(tile_T1) || nrow(tile_T1) == 0) next
-    
-      gedi_T1 <- vect(tile_T1, geom = c("lon_lowestmode", "lat_lowestmode"),
-                      crs = "EPSG:4326", keepgeom = FALSE)
-      gedi_T1_prj <- project(gedi_T1, "EPSG:6933")
-      gcount_T1 <- rasterize(geom(gedi_T1_prj)[, c("x", "y")],
-                             GRID.lons.adm.m, fun = "count", background = NA)
-    
-      paths_T2 <- paste0(path2gedi, "tile_id=", tile_id, "/year=", yearsT2, "/data_0.parquet")
-      tile_T2 <- purrr::map_dfr(paths_T2, safe_read_duck, cols = cols_to_read)
-      if (is.null(tile_T2) || nrow(tile_T2) == 0) next
-    
-      gedi_T2 <- vect(tile_T2, geom = c("lon_lowestmode", "lat_lowestmode"),
-                      crs = "EPSG:4326", keepgeom = FALSE)
-      gedi_T2_prj <- project(gedi_T2, "EPSG:6933")
-      gcount_T2 <- rasterize(geom(gedi_T2_prj)[, c("x", "y")],
-                             GRID.lons.adm.m, fun = "count", background = NA)
-
-  # --- Identify cells with >= min_count points in both T1 & T2 ---
-  r_both <- mask(gcount_T1 >= min_count & gcount_T2 >= min_count, GRID.lons.adm.m)
-
-  # --- Check if there are any valid cells before converting to points ---
-  valid_cells <- global(!is.na(r_both), "sum", na.rm = TRUE)[1, 1]
-  cat(sprintf(" %s valid overlap cells found.\n", valid_cells))
+  # --- Read GEDI points for T1 ---
+  paths_T1 <- paste0(path2gedi, "tile_id=", tile_id, "/year=", yearsT1, "/data_0.parquet")
+  tile_T1 <- purrr::map_dfr(paths_T1, safe_read_duck, cols = cols_to_read)
+  if (is.null(tile_T1) || nrow(tile_T1) == 0) next
+  
+  gedi_T1 <- vect(tile_T1, geom = c("lon_lowestmode", "lat_lowestmode"), crs = "EPSG:4326")
+  gedi_T1_prj <- project(gedi_T1, "EPSG:6933")
+  
+  # --- Read GEDI points for T2 ---
+  paths_T2 <- paste0(path2gedi, "tile_id=", tile_id, "/year=", yearsT2, "/data_0.parquet")
+  tile_T2 <- purrr::map_dfr(paths_T2, safe_read_duck, cols = cols_to_read)
+  if (is.null(tile_T2) || nrow(tile_T2) == 0) next
+  
+  gedi_T2 <- vect(tile_T2, geom = c("lon_lowestmode", "lat_lowestmode"), crs = "EPSG:4326")
+  gedi_T2_prj <- project(gedi_T2, "EPSG:6933")
+  
+  # --- Rasterize points on template raster ---
+  gcount_T1 <- rasterize(gedi_T1_prj, template_rast, fun = "count", background = NA)
+  gcount_T2 <- rasterize(gedi_T2_prj, template_rast, fun = "count", background = NA)
+  
+  # --- Identify cells with >= min_count points in both periods ---
+  r_both <- mask(gcount_T1 >= min_count & gcount_T2 >= min_count, template_rast)
+  
+  # --- Check for valid cells ---
+  valid_cells <- global(!is.na(r_both), "sum", na.rm = TRUE)[1,1]
   if (is.na(valid_cells) || valid_cells == 0) {
     cat(sprintf("  → Tile %s: no valid overlap cells.\n", tile_id))
     next
   }
-
-  # --- Conversion to points --- each raster cell becomes a point at its centroid (x, y).
+  
+  # --- Convert raster to points (cell centroids) ---
   pts <- try(as.points(r_both, values = FALSE), silent = TRUE)
   if (inherits(pts, "try-error") || nrow(pts) == 0) {
     cat(sprintf("  → Tile %s: empty raster, skipping.\n", tile_id))
     next
   }
-
+  
+  # --- Convert back to lat/lon and store coordinates ---
   pts_ll <- project(pts, "EPSG:4326")
-  coords <- try(terra::crds(pts_ll), silent = TRUE)
-  xy_overlap <- as.data.frame(coords[, 1:2, drop = FALSE])
-  colnames(xy_overlap) <- c("x", "y")
-    
-  GRID.coords <- rbind(GRID.coords, xy_overlap)
-
+  coords <- crds(pts_ll)
+  xy_overlap <- as.data.frame(coords[,1:2, drop = FALSE])
+  colnames(xy_overlap) <- c("x","y")
+  
+  coords_list[[list_idx]] <- xy_overlap
+  list_idx <- list_idx + 1
+  
   cat(sprintf("  → Tile %s: added %d cells.\n", tile_id, nrow(xy_overlap)))
 }
 
 dbDisconnect(con, shutdown = TRUE)
 
-# --- Deduplicate grid cells across tiles ---------------------------------
-GRID.coords <- unique(GRID.coords)
+# --- Combine all points and deduplicate ---
+GRID.coords <- unique(do.call(rbind, coords_list))
 cat(sprintf("\n✅ Finished: %d grid cells meet min_count = %d in both periods.\n", nrow(GRID.coords), min_count))
 
 # --- Save output to file -------------------------------------------------
@@ -227,72 +229,76 @@ saveRDS(GRID.for.matching, file = filename_out)
 
 #-------------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------------
-# STEP2. Clip sampling grid to nonPA areas within country & sample raster layers on nonPA grid
+# STEP2. Clip sampling grid to nonPA areas & sample raster layers
 #-------------------------------------------------------------------------------------
 #GRID.for.matching <- readRDS(s3_get(paste0(s3.path, "INPUT_grids/", iso3, "_grid.RDS"), force=TRUE))
 
 GRID.pts.nonPA <- project(GRID.for.matching, "epsg:4326")
 
-  for(i in 1:length(allPAs)){
-    PA          <- vect(allPAs[i,])
-    PA_prj      <- project(PA, "epsg:6933")
-    PA_prj_buff <- terra::buffer(PA_prj, width = 10000) ##10km buffer
-    PA2         <- project(PA_prj_buff, "epsg:4326")
-    overlap     <- GRID.pts.nonPA[PA2]
-    if(length(overlap)>0){
-      GRID.pts.nonPA0 <- st_difference(sf::st_as_sf(GRID.pts.nonPA), sf::st_as_sf(PA2)) ##remove pts inside poly
-      GRID.pts.nonPA <- vect(GRID.pts.nonPA0$geometry)
-      GRID.pts.nonPA <- project(GRID.pts.nonPA, "epsg:4326")
-    } 
-    print(length(GRID.pts.nonPA))
-  }
+# Project all PAs and buffer once
+allPAs_vect <- vect(allPAs)
+allPAs_prj  <- project(allPAs_vect, "EPSG:6933")
+allPAs_buff <- buffer(allPAs_prj, width = 10000)  # 10 km buffer
 
-nonPA_xy  <- geom(GRID.pts.nonPA)[,c("x","y")]
-  colnames(nonPA_xy)  <- c("x","y")
-  nonPA_spdf  <- tryCatch(vect(nonPA_xy, crs="epsg:4326"),      
+# Combine all PAs into a single polygon
+allPAs_union <- st_union(st_as_sf(allPAs_buff))
+allPAs_union <- st_make_valid(allPAs_union)
+
+# Project back to lat/lon
+allPAs_union_ll <- st_transform(allPAs_union, 4326)
+
+# Remove all nonPA points in one operation
+GRID.pts.nonPA_sf <- st_as_sf(GRID.pts.nonPA)
+GRID.pts.nonPA_sf <- st_difference(GRID.pts.nonPA_sf, allPAs_union_ll)
+GRID.pts.nonPA <- vect(GRID.pts.nonPA_sf)
+
+# Convert to XY dataframe
+nonPA_xy <- geom(GRID.pts.nonPA)[,c("x","y")]
+colnames(nonPA_xy) <- c("x","y")
+nonPA_spdf <- tryCatch(vect(nonPA_xy, crs="EPSG:4326"),      
                           error=function(cond){
                             cat("Country too small - quit processing ", iso3, dim(nonPA_xy),"\n")
                             return(quit(save="no"))})
 
-for (j in 1:length(matching_tifs)){
-    ras <- rast(s3_get(paste0(s3.path, "INPUT_covariates_2020/", matching_tifs[j], ".tif")))
-    print(matching_tifs[j])
-    ras_ex <- extract(ras, nonPA_spdf, method="simple", factors=FALSE)
-    nm <- names(ras)
-    nonPA_spdf$nm <- ras_ex[, matching_tifs[j]]
-    names(nonPA_spdf)[j] <- matching_tifs[j]
-  }
+# Extract raster values for nonPA points
+for (j in seq_along(matching_tifs)){
+  ras <- rast(s3_get(paste0(s3.path, "INPUT_covariates_2020/", matching_tifs[j], ".tif")))
+  ras_ex <- extract(ras, nonPA_spdf, method="simple", factors=FALSE)
+  nonPA_spdf[[matching_tifs[j]]] <- ras_ex[, matching_tifs[j]]
+}
 
+# Add coordinates
 nonPA_spdf$x <- geom(nonPA_spdf)[,"x"]
 nonPA_spdf$y <- geom(nonPA_spdf)[,"y"]
 
-head(nonPA_spdf)
+# Convert to dataframe and rename columns
+d_control <- data.frame(nonPA_spdf)
+d_control$status <- FALSE
+names(d_control) <- make.names(names(d_control), allow_ = TRUE)
 
-d_control <- nonPA_spdf
-d_control$status <- as.logical("FALSE")
-names(d_control) <- make.names(names(d_control), allow_ = FALSE)
-
+# Rename variables
 d_control <- data.frame(d_control) %>%
     dplyr::rename(
       ### land_cover = lc2000,
-      gedi = gedi.l4b,
-      land_cover = MapBiomas.brasil.coverage.2020,
+      gedi_l4b = gedi_l4b,
+      land_cover = MapBiomas_brasil_coverage_2020,
       slope = slope,
       elevation = dem,
-      popden = pop.den.2020,
-      popcnt = pop.cnt.2020,
-      min_temp = wc.tmin.2010.2018,
-      max_temp = wc.tmax.2010.2018,
-      mean_temp = wc.tavg.2010.2018,
-      prec = wc.prec.2010.2018,
-      tt2city = tt2cities.2015,
+      popden = pop_den_2020,
+      popcnt = pop_cnt_2020,
+      min_temp = wc_tmin_2010.2018,
+      max_temp = wc_tmax_2010.2018,
+      mean_temp = wc_tavg_2010.2018,
+      prec = wc_prec_2010.2018,
+      tt2city = tt2cities_2015,
       ### wwfbiom = wwf.biomes,
       ### wwfecoreg = wwf.ecoreg,
       d2city = dcities,
       d2road = d2roads,
       lon = x,
       lat = y)
-  d_control$land_cover <- factor(d_control$land_cover, levels=sequence(10),
+# Factor land cover
+d_control$land_cover <- factor(d_control$land_cover, levels=sequence(10),
                                  labels = c("l1_forest",
                                             "l2_savanna",
                                             "l3_mangrove",
@@ -304,14 +310,14 @@ d_control <- data.frame(d_control) %>%
                                             "l9_nonvegetated",
                                             "l10_water"))
   
-  d_control$UID <-  seq.int(nrow(d_control))
+d_control$UID <- seq.int(nrow(d_control))
    
+# Save
 filename_out <- paste("output/", iso3, "_prepped_control.RDS")
 #filename_out <- paste0(f.path, "/MATCHING_points/", iso3, "_prepped_control.RDS")
 print(filename_out)
 
 saveRDS(d_control, file = filename_out)  
-
 
 #-------------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------------
@@ -324,81 +330,80 @@ saveRDS(d_control, file = filename_out)
 
 for(i in 1:length(allPAs)){
     
-    testPA <- vect(allPAs[i,])
-    testPA <- project(testPA, "epsg:4326")
-    GRID.pts.testPA <- GRID.for.matching[testPA]
+  testPA <- vect(allPAs[i,])
+  testPA <- project(testPA, "EPSG:4326")
     
-    #if(length(GRID.pts.testPA)>0){
-    if(length(GRID.pts.testPA)>1){
-      testPA_xy <- geom(GRID.pts.testPA)[,c("x","y")]
-      colnames(testPA_xy) <- c("x","y")
-      testPA_spdf  <- vect(testPA_xy, crs="epsg:4326")
-                              
-        for (j in 1:length(matching_tifs)){
-        ras <- rast(s3_get(paste0(s3.path, "INPUT_covariates_2020/", matching_tifs[j], ".tif"), force=TRUE))
-        ras <- crop(ras, testPA)
-        ras_ex <- extract(ras, testPA_spdf, method="simple", factors=F)
-        nm <- names(ras)
-        testPA_spdf$nm <- ras_ex[, matching_tifs[j]]
-        names(testPA_spdf)[j] <- matching_tifs[j]
-      }
-    
-    testPA_spdf$x <- geom(testPA_spdf)[,"x"]
-    testPA_spdf$y <- geom(testPA_spdf)[,"y"]
-      
-    d_pa <- testPA_spdf
-    d_pa$status <- as.logical("TRUE")
-    d_pa$DESIG_ENG <- testPA$DESIG_ENG
-    d_pa$REP_AREA <- testPA$REP_AREA
-    d_pa$PA_STATUS <- testPA$STATUS
-    d_pa$PA_STATUSYR <- testPA$STATUS_YR
-    d_pa$GOV_TYPE <- testPA$GOV_TYPE
-    d_pa$OWN_TYPE <- testPA$OWN_TYPE
-    d_pa$MANG_AUTH <- testPA$MANG_AUTH
-    names(d_pa) <- make.names(names(d_pa), allow_ = FALSE)
-    
-    d_pa <- data.frame(d_pa) %>%
-            dplyr::rename(
-            ### land_cover = lc2000,
-            gedi = gedi.l4b,
-            land_cover = MapBiomas.brasil.coverage.2020,
-            slope = slope,
-            elevation = dem,
-            popden = pop.den.2020,
-            popcnt = pop.cnt.2020,
-            min_temp = wc.tmin.2010.2018,
-            max_temp = wc.tmax.2010.2018,
-            mean_temp = wc.tavg.2010.2018,
-            prec = wc.prec.2010.2018,
-            tt2city = tt2cities.2015,
-            ### wwfbiom = wwf.biomes,
-            ### wwfecoreg = wwf.ecoreg,
-            d2city = dcities,
-            d2road = d2roads,
-            lon = x,
-            lat = y)
-      d_pa$land_cover <- factor(d_pa$land_cover, levels=sequence(10),
-                                 labels = c("l1_forest",
-                                            "l2_savanna",
-                                            "l3_mangrove",
-                                            "l4_floodedforest",
-                                            "l5_plantation",
-                                            "l6_wetland",
-                                            "l7_grassland",
-                                            "l8_agriculture",
-                                            "l9_nonvegetated",
-                                            "l10_water"))
-      
-      d_pa$UID <- seq.int(nrow(d_pa))
+  # Select points inside PA
+  GRID.pts.testPA <- GRID.for.matching[testPA]
+  if(length(GRID.pts.testPA) <= 1) next  # skip empty PAs
 
-      filename_out <- paste0("output/", iso3, "_prepped_pa_", testPA$WDPAID, ".RDS")
-      #filename_out <- paste0(f.path, "/MATCHING_points/", iso3, "/", iso3, "_prepped_pa_", testPA$WDPAID, ".RDS")
-      print(filename_out)
-        
-      saveRDS(d_pa, file = filename_out)  
-    }
+  # Get XY
+  testPA_xy <- geom(GRID.pts.testPA)[,c("x","y")]
+  colnames(testPA_xy) <- c("x","y")
+  testPA_spdf <- vect(testPA_xy, crs="EPSG:4326")
+  
+  # Extract rasters
+  for(j in seq_along(matching_tifs)){
+    ras <- rast(s3_get(paste0(s3.path, "INPUT_covariates_2020/", matching_tifs[j], ".tif")))
+    ras_crop <- crop(ras, testPA)
+    ras_ex <- extract(ras_crop, testPA_spdf, method="simple", factors=FALSE)
+    testPA_spdf[[matching_tifs[j]]] <- ras_ex[, matching_tifs[j]]
   }
+  
+  # Add coordinates
+  testPA_spdf$x <- geom(testPA_spdf)[,"x"]
+  testPA_spdf$y <- geom(testPA_spdf)[,"y"]
+  
+  # Convert to dataframe
+  d_pa <- data.frame(testPA_spdf)
+  d_pa$status <- TRUE
+  
+  # Add PA attributes
+  d_pa$DESIG_ENG <- testPA$DESIG_ENG
+  d_pa$REP_AREA <- testPA$REP_AREA
+  d_pa$PA_STATUS <- testPA$STATUS
+  d_pa$PA_STATUSYR <- testPA$STATUS_YR
+  d_pa$GOV_TYPE <- testPA$GOV_TYPE
+  d_pa$OWN_TYPE <- testPA$OWN_TYPE
+  d_pa$MANG_AUTH <- testPA$MANG_AUTH
+  
+  # Rename columns
+  names(d_pa) <- make.names(names(d_pa), allow_ = TRUE)
+  d_pa <- d_pa %>%
+    dplyr::rename(
+      ### land_cover = lc2000,
+      gedi_l4b = gedi_l4b,
+      land_cover = MapBiomas_brasil_coverage_2020,
+      slope = slope,
+      elevation = dem,
+      popden = pop_den_2020,
+      popcnt = pop_cnt_2020,
+      min_temp = wc_tmin_2010.2018,
+      max_temp = wc_tmax_2010.2018,
+      mean_temp = wc_tavg_2010.2018,
+      prec = wc_prec_2010.2018,
+      tt2city = tt2cities_2015,
+      ### wwfbiom = wwf.biomes,
+      ### wwfecoreg = wwf.ecoreg,
+      d2city = dcities,
+      d2road = d2roads,
+      lon = x,
+      lat = y)
+  
+  d_pa$land_cover <- factor(d_pa$land_cover, levels=1:10,
+                            labels=c("l1_forest","l2_savanna","l3_mangrove",
+                                     "l4_floodedforest","l5_plantation","l6_wetland",
+                                     "l7_grassland","l8_agriculture","l9_nonvegetated","l10_water"))
+  
+  d_pa$UID <- seq.int(nrow(d_pa))
 
+  # Save
+  filename_out <- paste0("output/", iso3, "_prepped_pa_", testPA$WDPAID, ".RDS")
+#  filename_out <- paste0(f.path, "/MATCHING_points/", iso3, "/", iso3, "_prepped_pa_", testPA$WDPAID, ".RDS")
+  saveRDS(d_pa, file=filename_out)  
+}
+
+#-------------------------------------------------------------------------------------
 png(paste0("output/", iso3, "_matching_points_map.png"), width = 1000, height = 1000, res = 300)
 #png(paste0(f.path, iso3, "_matching_points_map.png"), width = 1000, height = 1000, res = 300)
 plot(allPAs)
