@@ -405,9 +405,11 @@ for(i in 1:length(allPAs)){
 
   # Save
   #filename_out <- paste0("output/", iso3, "_prepped_pa_", testPA$WDPAID, ".RDS")
-  filename_out <- paste0("output/", iso3, "_prepped_PAs.RDS")
-  saveRDS(d_pa, file=filename_out)  
+  #saveRDS(d_pa, file=filename_out)  
 }
+
+filename_out <- paste0("output/", iso3, "_prepped_PAs.RDS")
+saveRDS(all_PA_points, file=filename_out)  
 
 #-------------------------------------------------------------------------------------
 png(paste0("output/", iso3, "_matching_points_map.png"), width = 1000, height = 1000, res = 300)
