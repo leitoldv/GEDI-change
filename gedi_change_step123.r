@@ -328,6 +328,8 @@ saveRDS(d_control, file = filename_out)
 #-------------------------------------------------------------------------------------
 #GRID.for.matching <- readRDS(s3_get(paste0(s3.path, "INPUT_grids/", iso3, "_grid.RDS"), force=TRUE))
 
+all_PA_points <- list()
+
 for(i in 1:length(allPAs)){
     
   testPA <- vect(allPAs[i,])
@@ -359,13 +361,15 @@ for(i in 1:length(allPAs)){
   d_pa$status <- TRUE
   
   # Add PA attributes
+  d_pa$WDPAID <- testPA$WDPAID
   d_pa$DESIG_ENG <- testPA$DESIG_ENG
-  d_pa$REP_AREA <- testPA$REP_AREA
-  d_pa$PA_STATUS <- testPA$STATUS
+  d_pa$IUCN_CAT <- testPA$IUCN_CAT
+  d_pa$GIS_AREA <- testPA$GIS_AREA
   d_pa$PA_STATUSYR <- testPA$STATUS_YR
-  d_pa$GOV_TYPE <- testPA$GOV_TYPE
-  d_pa$OWN_TYPE <- testPA$OWN_TYPE
-  d_pa$MANG_AUTH <- testPA$MANG_AUTH
+  #d_pa$PA_STATUS <- testPA$STATUS
+  #d_pa$GOV_TYPE <- testPA$GOV_TYPE
+  #d_pa$OWN_TYPE <- testPA$OWN_TYPE
+  #d_pa$MANG_AUTH <- testPA$MANG_AUTH
   
   # Rename columns
   names(d_pa) <- make.names(names(d_pa), allow_ = TRUE)
@@ -397,9 +401,11 @@ for(i in 1:length(allPAs)){
   
   d_pa$UID <- seq.int(nrow(d_pa))
 
+  all_PA_points[[as.character(testPA$WDPAID)]] <- d_pa
+
   # Save
-  filename_out <- paste0("output/", iso3, "_prepped_pa_", testPA$WDPAID, ".RDS")
-#  filename_out <- paste0(f.path, "/MATCHING_points/", iso3, "/", iso3, "_prepped_pa_", testPA$WDPAID, ".RDS")
+  #filename_out <- paste0("output/", iso3, "_prepped_pa_", testPA$WDPAID, ".RDS")
+  filename_out <- paste0("output/", iso3, "_prepped_PAs.RDS")
   saveRDS(d_pa, file=filename_out)  
 }
 
