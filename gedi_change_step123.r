@@ -361,11 +361,11 @@ for(i in 1:length(allPAs)){
   d_pa$status <- TRUE
   
   # Add PA attributes
-  d_pa$WDPAID <- testPA$WDPAID
-  d_pa$DESIG_ENG <- testPA$DESIG_ENG
-  d_pa$IUCN_CAT <- testPA$IUCN_CAT
-  d_pa$GIS_AREA <- testPA$GIS_AREA
-  d_pa$PA_STATUSYR <- testPA$STATUS_YR
+  #d_pa$WDPAID <- testPA$WDPAID
+  #d_pa$DESIG_ENG <- testPA$DESIG_ENG
+  #d_pa$IUCN_CAT <- testPA$IUCN_CAT
+  #d_pa$GIS_AREA <- testPA$GIS_AREA
+  #d_pa$PA_STATUSYR <- testPA$STATUS_YR
   #d_pa$PA_STATUS <- testPA$STATUS
   #d_pa$GOV_TYPE <- testPA$GOV_TYPE
   #d_pa$OWN_TYPE <- testPA$OWN_TYPE
