@@ -313,7 +313,7 @@ d_control$land_cover <- factor(d_control$land_cover, levels=sequence(10),
 d_control$UID <- seq.int(nrow(d_control))
    
 # Save
-filename_out <- paste("output/", iso3, "_prepped_control.RDS")
+filename_out <- paste0("output/", iso3, "_prepped_control.RDS")
 #filename_out <- paste0(f.path, "/MATCHING_points/", iso3, "_prepped_control.RDS")
 print(filename_out)
 
