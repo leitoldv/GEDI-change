@@ -55,6 +55,7 @@ matching_tifs <- c("d2roads", "dcities", "dem", "slope",
                    "pop_cnt_2020", "pop_den_2020", "tt2cities_2015",
                    "wc_prec_2010-2018", "wc_tavg_2010-2018",
                    "wc_tmax_2010-2018", "wc_tmin_2010-2018",
+                   "biome", "ecoreg", ##"wwf_biomes", "wwf_ecoreg",
                    "MapBiomas_brasil_coverage_2020", "gedi_l4b")
 
 #-------------------------------------------------------------------------------------
@@ -291,30 +292,23 @@ d_control <- data.frame(d_control) %>%
       mean_temp = wc_tavg_2010.2018,
       prec = wc_prec_2010.2018,
       tt2city = tt2cities_2015,
-      ### wwfbiom = wwf.biomes,
-      ### wwfecoreg = wwf.ecoreg,
+      wwfbiom = biome,
+      wwfecoreg = ecoreg,
       d2city = dcities,
       d2road = d2roads,
       lon = x,
       lat = y)
 # Factor land cover
 d_control$land_cover <- factor(d_control$land_cover, levels=sequence(10),
-                                 labels = c("l1_forest",
-                                            "l2_savanna",
-                                            "l3_mangrove",
-                                            "l4_floodedforest",
-                                            "l5_plantation",
-                                            "l6_wetland",
-                                            "l7_grassland",
-                                            "l8_agriculture",
-                                            "l9_nonvegetated",
-                                            "l10_water"))
+                                 labels = c("l1_forest", "l2_savanna", "l3_mangrove",
+                                            "l4_floodedforest", "l5_plantation", "l6_wetland",
+                                            "l7_grassland", "l8_agriculture", "l9_nonvegetated", "l10_water"))
   
 d_control$UID <- seq.int(nrow(d_control))
    
 # Save
 filename_out <- paste0("output/", iso3, "_prepped_control.RDS")
-#filename_out <- paste0(f.path, "/MATCHING_points/", iso3, "_prepped_control.RDS")
+#filename_out <- paste0(f.path, "MATCHING_points/", iso3, "_prepped_control.RDS")
 print(filename_out)
 
 saveRDS(d_control, file = filename_out)  
@@ -387,8 +381,8 @@ for(i in 1:length(allPAs)){
       mean_temp = wc_tavg_2010.2018,
       prec = wc_prec_2010.2018,
       tt2city = tt2cities_2015,
-      ### wwfbiom = wwf.biomes,
-      ### wwfecoreg = wwf.ecoreg,
+      wwfbiom = biome,
+      wwfecoreg = ecoreg,
       d2city = dcities,
       d2road = d2roads,
       lon = x,
@@ -408,12 +402,13 @@ for(i in 1:length(allPAs)){
   #saveRDS(d_pa, file=filename_out)  
 }
 
+#filename_out <- paste0(f.path, "MATCHING_points/", iso3, "_prepped_PAs.RDS")
 filename_out <- paste0("output/", iso3, "_prepped_PAs.RDS")
 saveRDS(all_PA_points, file=filename_out)  
 
 #-------------------------------------------------------------------------------------
+#png(paste0(f.path, "MATCHING_points/", iso3, "_matching_points_map.png"), width = 1000, height = 1000, res = 300)
 png(paste0("output/", iso3, "_matching_points_map.png"), width = 1000, height = 1000, res = 300)
-#png(paste0(f.path, iso3, "_matching_points_map.png"), width = 1000, height = 1000, res = 300)
 plot(allPAs)
 plot(GRID.pts.nonPA, pch=".", col="blue", add=T)
 plot(adm, border="red", add=T)
